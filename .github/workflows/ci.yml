@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Lint • Analyze • Test (Flutter ${{ matrix.channel }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        channel: [ stable, beta ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ matrix.channel }}
+          cache: true
+      # ref: https://github.com/subosito/flutter-action :contentReference[oaicite:0]{index=0}
+
+      - name: Flutter version
+        run: flutter --version
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Format check
+        run: dart format --set-exit-if-changed .
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Run tests (with coverage)
+        run: flutter test --coverage
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.channel }}
+          path: coverage/lcov.info
+
+  pana:
+    name: Pana score (pub.dev readiness)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - name: Install pana
+        run: dart pub global activate pana
+      - name: Run pana
+        run: ~/.pub-cache/bin/pana --no-warning --exit-code-threshold 0 --source path .
+      # pana helps catch pub.dev score issues proactively. (General guidance)
+
+  docs:
+    name: Build API docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - name: Install dartdoc
+        run: dart pub global activate dartdoc
+      - name: Build docs
+        run: ~/.pub-cache/bin/dartdoc
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-docs
+          path: doc/api
